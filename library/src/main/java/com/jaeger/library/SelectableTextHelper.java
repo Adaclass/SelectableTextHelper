@@ -1,5 +1,6 @@
 package com.jaeger.library;
 
+import android.annotation.SuppressLint;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -8,9 +9,9 @@ import android.graphics.Paint;
 import android.os.Build;
 import android.support.annotation.ColorInt;
 import android.text.Layout;
+import android.text.Selection;
 import android.text.Spannable;
-import android.text.Spanned;
-import android.text.style.BackgroundColorSpan;
+import android.text.method.LinkMovementMethod;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -22,7 +23,7 @@ import android.widget.TextView;
 
 /**
  * Created by Jaeger on 16/8/30.
- *
+ * <p>
  * Email: chjie.jaeger@gmail.com
  * GitHub: https://github.com/laobie
  */
@@ -44,10 +45,9 @@ public class SelectableTextHelper {
     private int mTouchX;
     private int mTouchY;
 
-    private int mSelectedColor;
+
     private int mCursorHandleColor;
     private int mCursorHandleSize;
-    private BackgroundColorSpan mSpan;
     private boolean isHideWhenScroll;
     private boolean isHide = true;
 
@@ -57,7 +57,7 @@ public class SelectableTextHelper {
     public SelectableTextHelper(Builder builder) {
         mTextView = builder.mTextView;
         mContext = mTextView.getContext();
-        mSelectedColor = builder.mSelectedColor;
+        mTextView.setHighlightColor(builder.mSelectedColor);
         mCursorHandleColor = builder.mCursorHandleColor;
         mCursorHandleSize = TextLayoutUtil.dp2px(mContext, builder.mCursorHandleSizeInDp);
         init();
@@ -65,6 +65,7 @@ public class SelectableTextHelper {
 
     private void init() {
         mTextView.setText(mTextView.getText(), TextView.BufferType.SPANNABLE);
+        mTextView.setMovementMethod(LinkMovementMethod.getInstance());
         mTextView.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
@@ -73,11 +74,22 @@ public class SelectableTextHelper {
             }
         });
 
+        mTextView.setFocusable(true);
+        mTextView.setFocusableInTouchMode(true);
         mTextView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 mTouchX = (int) event.getX();
                 mTouchY = (int) event.getY();
+                int action = event.getAction();
+                if(action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_UP){
+                    v.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            ensureSelection();
+                        }
+                    });
+                }
                 return false;
             }
         });
@@ -135,6 +147,14 @@ public class SelectableTextHelper {
         mOperateWindow = new OperateWindow(mContext);
     }
 
+    private void ensureSelection() {
+        if (mSpannable != null) {
+            Selection.setSelection(mSpannable, mSelectionInfo.mStart, mSelectionInfo.mEnd);
+            mTextView.requestFocus();
+            mTextView.invalidate();
+        }
+    }
+
     private void postShowSelectView(int duration) {
         mTextView.removeCallbacks(mShowSelectViewRunnable);
         if (duration <= 0) {
@@ -157,6 +177,7 @@ public class SelectableTextHelper {
             if (mEndHandle != null) {
                 showCursorHandle(mEndHandle);
             }
+            ensureSelection();
         }
     };
 
@@ -175,9 +196,8 @@ public class SelectableTextHelper {
 
     private void resetSelectionInfo() {
         mSelectionInfo.mSelectionContent = null;
-        if (mSpannable != null && mSpan != null) {
-            mSpannable.removeSpan(mSpan);
-            mSpan = null;
+        if (mSpannable != null) {
+            Selection.removeSelection(mSpannable);
         }
     }
 
@@ -222,14 +242,15 @@ public class SelectableTextHelper {
         }
 
         if (mSpannable != null) {
-            if (mSpan == null) {
-                mSpan = new BackgroundColorSpan(mSelectedColor);
-            }
+
             mSelectionInfo.mSelectionContent = mSpannable.subSequence(mSelectionInfo.mStart, mSelectionInfo.mEnd).toString();
-            mSpannable.setSpan(mSpan, mSelectionInfo.mStart, mSelectionInfo.mEnd, Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
+            Selection.setSelection(mSpannable, mSelectionInfo.mStart, mSelectionInfo.mEnd);
             if (mSelectListener != null) {
                 mSelectListener.onTextSelected(mSelectionInfo.mSelectionContent);
             }
+
+            mTextView.requestFocus();
+            mTextView.invalidate();
         }
     }
 
@@ -261,11 +282,11 @@ public class SelectableTextHelper {
         public OperateWindow(final Context context) {
             View contentView = LayoutInflater.from(context).inflate(R.layout.layout_operate_windows, null);
             contentView.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
             mWidth = contentView.getMeasuredWidth();
             mHeight = contentView.getMeasuredHeight();
             mWindow =
-                new PopupWindow(contentView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, false);
+                    new PopupWindow(contentView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, false);
             mWindow.setClippingEnabled(false);
 
             contentView.findViewById(R.id.tv_copy).setOnClickListener(new View.OnClickListener() {
@@ -273,7 +294,7 @@ public class SelectableTextHelper {
                 public void onClick(View v) {
                     ClipboardManager clip = (ClipboardManager) mContext.getSystemService(Context.CLIPBOARD_SERVICE);
                     clip.setPrimaryClip(
-                        ClipData.newPlainText(mSelectionInfo.mSelectionContent, mSelectionInfo.mSelectionContent));
+                            ClipData.newPlainText(mSelectionInfo.mSelectionContent, mSelectionInfo.mSelectionContent));
                     if (mSelectListener != null) {
                         mSelectListener.onTextSelected(mSelectionInfo.mSelectionContent);
                     }
@@ -441,10 +462,10 @@ public class SelectableTextHelper {
             Layout layout = mTextView.getLayout();
             if (isLeft) {
                 mPopupWindow.update((int) layout.getPrimaryHorizontal(mSelectionInfo.mStart) - mWidth + getExtraX(),
-                    layout.getLineBottom(layout.getLineForOffset(mSelectionInfo.mStart)) + getExtraY(), -1, -1);
+                        layout.getLineBottom(layout.getLineForOffset(mSelectionInfo.mStart)) + getExtraY(), -1, -1);
             } else {
                 mPopupWindow.update((int) layout.getPrimaryHorizontal(mSelectionInfo.mEnd) + getExtraX(),
-                    layout.getLineBottom(layout.getLineForOffset(mSelectionInfo.mEnd)) + getExtraY(), -1, -1);
+                        layout.getLineBottom(layout.getLineForOffset(mSelectionInfo.mEnd)) + getExtraY(), -1, -1);
             }
         }
 
